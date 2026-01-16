@@ -6,7 +6,7 @@ export async function POST(request: Request) {
     const { messages }: { messages: UIMessage[] } = await request.json();
     try {
         const result = streamText({
-            model: groq("llama-3.1-8b-instant"),
+            model: groq("meta-llama/llama-4-maverick-17b-128e-instruct"),
             messages: await convertToModelMessages(messages),
         });
     

@@ -1,26 +1,53 @@
 "use client";
 import ReactMarkdown from "react-markdown";
+import Image from "next/image";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useChat } from "@ai-sdk/react";
-import { Send, Sparkles, Loader2, User, Square } from "lucide-react";
-import { useState } from "react";
+import {
+  Send,
+  Sparkles,
+  Loader2,
+  User,
+  Square,
+  Paperclip,
+  X,
+} from "lucide-react";
+import { useState, useRef } from "react";
+import { DefaultChatTransport } from "ai";
 
 function Page() {
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status, error, stop } = useChat();
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      if (selectedFiles.length + files.length > 5) {
+        alert("You can only upload up to 5 images.");
+        return;
+      }
+      setSelectedFiles((prev) => [...prev, ...files]);
+    }
+    // reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+  const { messages, sendMessage, status, error, stop } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+    }),
+  });
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#ededed] font-sans selection:bg-orange-500/30">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 p-4 border-b border-white/5 bg-[#0a0a0a]/80 backdrop-blur-md z-10 flex items-center justify-center">
-        <div className="flex items-center gap-2 text-sm font-medium text-neutral-400">
-          <Sparkles className="w-4 h-4 text-orange-500" />
-          <span>AI Assistant</span>
-        </div>
-      </header>
-
       {/* Main Content */}
       <main className="max-w-3xl mx-auto pt-24 pb-32 px-4">
         {/* Empty State */}
@@ -53,21 +80,44 @@ function Page() {
                   <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center border border-white/10 shrink-0">
                     <User className="w-4 h-4 text-neutral-400" />
                   </div>
-                  {message.parts.map((part, index) => {
-                    switch (part.type) {
-                      case "text":
+                  <div className="flex flex-col gap-2 items-end">
+                    {message.parts
+                      .filter(
+                        (part) =>
+                          part.type === "file" &&
+                          part.mediaType.startsWith("image/")
+                      )
+                      .map((part, index) => {
+                        if (part.type !== "file") return null;
                         return (
                           <div
-                            key={index}
+                            key={`file-${index}`}
+                            className="flex items-center gap-2"
+                          >
+                            <Image
+                              src={part.url}
+                              alt="preview"
+                              width={100}
+                              height={100}
+                              className="rounded-lg"
+                            />
+                          </div>
+                        );
+                      })}
+                    {message.parts
+                      .filter((part) => part.type === "text")
+                      .map((part, index) => {
+                        if (part.type !== "text") return null;
+                        return (
+                          <div
+                            key={`text-${index}`}
                             className="bg-neutral-800 text-neutral-200 px-6 py-4 rounded-3xl rounded-tr-sm border border-white/5 shadow-md"
                           >
                             <span className="leading-relaxed">{part.text}</span>
                           </div>
                         );
-                      default:
-                        return null;
-                    }
-                  })}
+                      })}
+                  </div>
                 </div>
               ) : (
                 <div key={message.id} className="self-start">
@@ -165,19 +215,66 @@ function Page() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            const dataTransfer = new DataTransfer();
+            selectedFiles.forEach((file) => {
+              dataTransfer.items.add(file);
+            });
+            sendMessage({ text: input, files: dataTransfer.files });
             setInput("");
-            sendMessage({ text: input });
+            setSelectedFiles([]);
           }}
           className="max-w-3xl mx-auto relative pointer-events-auto"
         >
+          {selectedFiles.length > 0 && (
+            <div className="flex gap-3 mb-4 overflow-x-auto pb-2">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="relative shrink-0 group/image">
+                  <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/10 ring-1 ring-black/20">
+                    <Image
+                      src={URL.createObjectURL(file)}
+                      alt="preview"
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    className="absolute -top-2 -right-2 p-1 bg-neutral-900 text-neutral-400 rounded-full border border-white/10 opacity-0 group-hover/image:opacity-100 transition-opacity hover:text-white"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="relative group">
             <input
-              className="w-full bg-neutral-900/80 backdrop-blur-xl text-neutral-200 border border-white/10 rounded-2xl py-4 pl-6 pr-14 shadow-2xl shadow-black/50 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all placeholder:text-neutral-600"
+              type="file"
+              id="fileInput"
+              multiple
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              className="hidden"
+              accept="image/*"
+            />
+
+            <label
+              htmlFor="fileInput"
+              className="absolute left-3 top-1/2 -translate-y-1/2 p-2 text-neutral-400 hover:text-white transition-colors z-10 cursor-pointer"
+            >
+              <Paperclip className="w-5 h-5" />
+            </label>
+
+            <input
+              className="w-full bg-neutral-900/80 backdrop-blur-xl text-neutral-200 border border-white/10 rounded-2xl py-4 pl-12 pr-14 shadow-2xl shadow-black/50 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all placeholder:text-neutral-600"
               placeholder="Send a message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
-            {(status === "ready" || status === "error") && (
+            {status === "ready" && (
               <button
                 type="submit"
                 disabled={!input.trim()}
@@ -186,7 +283,7 @@ function Page() {
                 <Send className="w-4 h-4" />
               </button>
             )}
-            {(status === "submitted" || status === "streaming") && (
+            {status !== "ready" && (
               <button
                 type="button"
                 onClick={stop}
